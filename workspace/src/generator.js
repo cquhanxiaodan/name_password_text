@@ -3,6 +3,19 @@ const UPPERCASE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 const DIGITS = '0123456789'
 const SYMBOLS = '!@#$%^&*()_+-=[]{}|;:,.<>?'
 
+const WORDS = [
+  'apple', 'banana', 'cherry', 'dragon', 'eagle', 'forest', 'garden', 'harbor',
+  'island', 'jungle', 'knight', 'lemon', 'mountain', 'nature', 'ocean', 'palace',
+  'quantum', 'river', 'sunset', 'thunder', 'umbrella', 'valley', 'winter', 'xenon',
+  'yellow', 'zebra', 'anchor', 'breeze', 'castle', 'diamond', 'ember', 'falcon',
+  'glacier', 'horizon', 'ivory', 'jasmine', 'kindle', 'lantern', 'marble', 'nebula',
+  'orchid', 'phoenix', 'quartz', 'rainbow', 'silver', 'twilight', 'unity', 'velvet',
+  'whisper', 'crystal', 'aurora', 'blossom', 'compass', 'dolphin', 'eclipse',
+  'fortune', 'gravity', 'harmony', 'infinity', 'journey', 'kingdom', 'liberty',
+  'mystery', 'nectar', 'oracle', 'prism', 'quest', 'radiant', 'stellar', 'temple',
+  'vortex', 'wonder', 'zenith', 'cosmic', 'digital', 'enigma', 'fragment', 'galaxy'
+]
+
 export function generatePassword(length = 16, options = {}) {
   const {
     lowercase = true,
@@ -38,6 +51,30 @@ export function generatePassword(length = 16, options = {}) {
   }
 
   return result
+}
+
+export function generatePassphrase(wordCount = 4, separator = '-') {
+  const indices = new Uint32Array(wordCount)
+  crypto.getRandomValues(indices)
+
+  let words = []
+  for (let i = 0; i < wordCount; i++) {
+    words.push(WORDS[indices[i] % WORDS.length])
+  }
+
+  const hasUppercase = Math.random() > 0.5
+  if (hasUppercase) {
+    words = words.map(w => w.charAt(0).toUpperCase() + w.slice(1))
+  }
+
+  const addNumber = Math.random() > 0.5
+  if (addNumber) {
+    const numArr = new Uint32Array(1)
+    crypto.getRandomValues(numArr)
+    words.push((numArr[0] % 99 + 1).toString())
+  }
+
+  return words.join(separator)
 }
 
 export function generateUsername(length = 8) {

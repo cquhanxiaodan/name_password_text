@@ -1,11 +1,21 @@
-import { generatePassword, generateUsername } from './generator.js'
-import { saveVault, loadVault, hasVault, clearVault } from './store.js'
+import { generatePassword, generateUsername, generatePassphrase } from './generator.js'
+import { saveVault, loadVault, hasVault, clearVault, exportToCSV, exportToJSON, importFromCSV, analyzePasswordHealth } from './store.js'
+import './style.css'
+import './index.css'
 
 let currentEntries = []
 let isUnlocked = false
 let masterPassword = ''
+let clipboardTimer = null
+let showThemeMenu = false
+let currentGroup = 'All'
 
 const app = document.getElementById('app')
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme)
+  localStorage.setItem('theme', theme)
+}
 
 function render() {
   if (!isUnlocked) {
@@ -20,38 +30,28 @@ function renderLockScreen() {
   app.innerHTML = `
     <div class="lock-screen">
       <div class="lock-card">
-        <div class="lock-icon">${isFirst ? '&#128274;' : '&#128272;'}</div>
-        <h1>Name Password Manager</h1>
-        <p class="subtitle">${isFirst ? '设置主密码以开始使用' : '输入主密码解锁'}</p>
+        <div class="lock-icon">${isFirst ? '🔐' : '🔒'}</div>
+        <h1 class="lock-title">Password Manager</h1>
+        <p class="lock-subtitle">${isFirst ? '设置主密码以开始使用' : '输入主密码解锁'}</p>
         <form id="unlock-form">
-          <div class="input-group">
-            <label for="master-pw">主密码</label>
-            <div class="pw-wrapper">
-              <input type="password" id="master-pw" placeholder="输入主密码" required autocomplete="off" />
-              <button type="button" class="toggle-pw" data-target="master-pw">&#128065;</button>
-            </div>
+          <div style="margin-bottom: 16px;">
+            <label class="form-label">主密码</label>
+            <input type="password" id="master-pw" class="form-input" placeholder="输入主密码" required autocomplete="off" />
           </div>
           ${isFirst ? `
-          <div class="input-group">
-            <label for="master-pw-confirm">确认主密码</label>
-            <div class="pw-wrapper">
-              <input type="password" id="master-pw-confirm" placeholder="再次输入主密码" required autocomplete="off" />
-              <button type="button" class="toggle-pw" data-target="master-pw-confirm">&#128065;</button>
-            </div>
+          <div style="margin-bottom: 16px;">
+            <label class="form-label">确认密码</label>
+            <input type="password" id="master-pw-confirm" class="form-input" placeholder="再次输入主密码" required autocomplete="off" />
           </div>` : ''}
           <button type="submit" class="btn-primary">${isFirst ? '创建保险库' : '解锁'}</button>
+          ${!isFirst ? '<button type="button" id="reset-vault" class="btn-ghost" style="width:100%;margin-top:16px;">重置保险库（清除所有数据）</button>' : ''}
         </form>
-        ${!isFirst ? '<button id="reset-vault" class="btn-danger-link">重置保险库（清除所有数据）</button>' : ''}
       </div>
     </div>
   `
+
   document.getElementById('unlock-form').addEventListener('submit', handleUnlock)
-  app.querySelectorAll('.toggle-pw').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const input = document.getElementById(btn.dataset.target)
-      input.type = input.type === 'password' ? 'text' : 'password'
-    })
-  })
+
   const resetBtn = document.getElementById('reset-vault')
   if (resetBtn) {
     resetBtn.addEventListener('click', () => {
@@ -64,68 +64,244 @@ function renderLockScreen() {
 }
 
 function renderMainScreen() {
+  const groups = [...new Set(currentEntries.map(e => e.group || 'Default'))]
+
   app.innerHTML = `
-    <div class="main-screen">
-      <header>
-        <h1>Name Password Manager</h1>
-        <button id="lock-btn" class="btn-secondary">&#128274; 锁定</button>
-      </header>
-      <div class="toolbar">
-        <input type="text" id="search-input" placeholder="搜索网站..." autocomplete="off" />
-        <button id="add-btn" class="btn-primary">+ 添加</button>
-      </div>
-      <div id="entry-list" class="entry-list"></div>
-      <div id="modal-overlay" class="modal-overlay hidden">
-        <div class="modal" id="modal"></div>
+    <div class="main-layout">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div class="sidebar-logo">
+            <span class="sidebar-logo-icon">🔐</span>
+            <div>
+              <div class="sidebar-logo-text">保险库</div>
+              <div class="sidebar-count">${currentEntries.length} 个凭据</div>
+            </div>
+          </div>
+        </div>
+
+        <nav class="sidebar-nav">
+          <button class="nav-item ${currentGroup === 'All' ? 'active' : ''}" data-group="All">
+            <span class="nav-item-icon">📁</span>
+            <span class="nav-item-text">全部凭据</span>
+            <span class="nav-item-count">${currentEntries.length}</span>
+          </button>
+          ${groups.map(group => {
+            const count = currentEntries.filter(e => (e.group || 'Default') === group).length
+            return `
+              <button class="nav-item ${currentGroup === group ? 'active' : ''}" data-group="${group}">
+                <span class="nav-item-icon">📂</span>
+                <span class="nav-item-text">${group}</span>
+                <span class="nav-item-count">${count}</span>
+              </button>
+            `
+          }).join('')}
+        </nav>
+
+        <div style="padding: 16px; border-top: 1px solid #2a2f3e;">
+          <button id="lock-btn" class="nav-item" style="width: 100%;">
+            <span class="nav-item-icon">🔒</span>
+            <span class="nav-item-text">锁定保险库</span>
+          </button>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="main-header">
+          <div class="header-top">
+            <h2 class="header-title">${currentGroup === 'All' ? '全部凭据' : currentGroup}</h2>
+            <div class="header-actions">
+              <div style="position: relative;">
+                <button id="theme-btn" class="theme-btn">🎨</button>
+                <div id="theme-menu" class="theme-menu" style="display: ${showThemeMenu ? 'block' : 'none'};">
+                  <div class="theme-menu-title">选择主题</div>
+                  <div class="theme-colors">
+                    <button class="theme-color-btn" data-theme="mytheme"><span class="theme-color-dot" style="background: #d4c5a9;"></span>黄褐</button>
+                    <button class="theme-color-btn" data-theme="blue"><span class="theme-color-dot" style="background: #0984e3;"></span>蓝色</button>
+                    <button class="theme-color-btn" data-theme="green"><span class="theme-color-dot" style="background: #00b894;"></span>绿色</button>
+                    <button class="theme-color-btn" data-theme="orange"><span class="theme-color-dot" style="background: #e17055;"></span>橙色</button>
+                    <button class="theme-color-btn" data-theme="pink"><span class="theme-color-dot" style="background: #fd79a8;"></span>粉色</button>
+                    <button class="theme-color-btn" data-theme="teal"><span class="theme-color-dot" style="background: #00cec9;"></span>青色</button>
+                  </div>
+                </div>
+              </div>
+              <button id="add-btn" class="add-btn">
+                <span>+</span> 添加凭据
+              </button>
+            </div>
+          </div>
+          <input type="text" id="search-input" class="search-input" placeholder="🔍  搜索网站、用户名或 URL..." />
+        </header>
+
+        <div class="content-body">
+          <div id="entry-list" class="entry-list"></div>
+        </div>
+      </main>
+    </div>
+
+    <div id="modal-overlay" class="modal-overlay" style="display: none;">
+      <div class="modal-box">
+        <h3 id="modal-title" class="modal-title">添加凭据</h3>
+        <form id="entry-form" class="modal-form">
+          <div>
+            <label class="form-label">网站 / 应用名称 <span style="color: #ff6b6b;">*</span></label>
+            <input type="text" id="entry-site" class="form-input" placeholder="例如: GitHub" required />
+          </div>
+          <div>
+            <label class="form-label">用户名 / 邮箱</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="entry-user" class="form-input" style="flex: 1;" placeholder="用户名或邮箱" />
+              <button type="button" id="gen-username-btn" class="gen-btn">🎲</button>
+            </div>
+          </div>
+          <div>
+            <label class="form-label">密码 <span style="color: #ff6b6b;">*</span></label>
+            <div style="display: flex; gap: 8px;">
+              <input type="password" id="entry-pw" class="form-input" style="flex: 1;" placeholder="密码" required autocomplete="off" />
+              <button type="button" id="toggle-pw-btn" class="gen-btn" style="padding: 12px;">👁</button>
+              <button type="button" id="gen-password-btn" class="gen-btn">⚡</button>
+            </div>
+            <div id="password-health" style="margin-top: 8px;"></div>
+          </div>
+          <div id="pw-options" class="pw-options" style="display: none;">
+            <div style="margin-bottom: 12px;">
+              <label class="form-label">密码长度: <span id="pw-len-val">16</span></label>
+              <input type="range" id="pw-len" class="pw-options-range" min="8" max="64" value="16" />
+            </div>
+            <div class="pw-options-checkboxes">
+              <label><input type="checkbox" id="pw-lower" checked /> 小写</label>
+              <label><input type="checkbox" id="pw-upper" checked /> 大写</label>
+              <label><input type="checkbox" id="pw-digits" checked /> 数字</label>
+              <label><input type="checkbox" id="pw-symbols" checked /> 符号</label>
+            </div>
+          </div>
+          <div>
+            <label class="form-label">网址 (URL)</label>
+            <input type="url" id="entry-url" class="form-input" placeholder="https://example.com" />
+          </div>
+          <div>
+            <label class="form-label">备注</label>
+            <textarea id="entry-notes" class="form-input" style="height: 80px; resize: vertical;" placeholder="添加备注信息..."></textarea>
+          </div>
+          <div class="modal-actions">
+            <button type="button" id="cancel-btn" class="btn btn-cancel">取消</button>
+            <button type="submit" id="modal-submit" class="btn btn-save">添加</button>
+          </div>
+        </form>
       </div>
     </div>
   `
-  document.getElementById('lock-btn').addEventListener('click', handleLock)
+
   document.getElementById('add-btn').addEventListener('click', () => openModal())
   document.getElementById('search-input').addEventListener('input', handleSearch)
+  document.getElementById('lock-btn').addEventListener('click', handleLock)
+
+  document.getElementById('theme-btn').addEventListener('click', (e) => {
+    e.stopPropagation()
+    showThemeMenu = !showThemeMenu
+    document.getElementById('theme-menu').style.display = showThemeMenu ? 'block' : 'none'
+  })
+
+  document.querySelectorAll('.theme-color-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      applyTheme(btn.dataset.theme)
+      showThemeMenu = false
+      document.getElementById('theme-menu').style.display = 'none'
+    })
+  })
+
+  document.addEventListener('click', () => {
+    showThemeMenu = false
+    document.getElementById('theme-menu').style.display = 'none'
+  })
+
+  document.querySelectorAll('.nav-item[data-group]').forEach(item => {
+    item.addEventListener('click', () => {
+      currentGroup = item.dataset.group
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
+      item.classList.add('active')
+      renderEntries(currentEntries)
+    })
+  })
+
   renderEntries(currentEntries)
 }
 
 function renderEntries(entries) {
   const list = document.getElementById('entry-list')
   if (!list) return
-  if (entries.length === 0) {
-    list.innerHTML = '<div class="empty-state">暂无凭据，点击"+ 添加"开始</div>'
+
+  let filtered = entries
+  if (currentGroup !== 'All') {
+    filtered = entries.filter(e => (e.group || 'Default') === currentGroup)
+  }
+
+  if (filtered.length === 0) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📋</div>
+        <div class="empty-title">暂无凭据</div>
+        <div class="empty-desc">点击右上角"添加凭据"按钮开始使用</div>
+      </div>
+    `
     return
   }
-  list.innerHTML = entries.map((e, i) => `
-    <div class="entry-card" data-index="${i}">
-      <div class="entry-header">
-        <span class="entry-site">${escapeHtml(e.site)}</span>
-        <div class="entry-actions">
-          <button class="btn-icon copy-btn" data-field="username" data-value="${escapeAttr(e.username)}" title="复制用户名">&#128203;</button>
-          <button class="btn-icon copy-btn" data-field="password" data-value="${escapeAttr(e.password)}" title="复制密码">&#128203;</button>
-          <button class="btn-icon edit-btn" data-index="${i}" title="编辑">&#9998;</button>
-          <button class="btn-icon delete-btn" data-index="${i}" title="删除">&#128465;</button>
-        </div>
-      </div>
-      <div class="entry-body">
-        <div class="entry-field">
-          <label>用户名</label>
-          <span class="entry-value" data-masked="true" data-real="${escapeAttr(e.username)}">${maskString(e.username)}</span>
-          <button class="btn-icon reveal-btn" title="显示/隐藏">&#128065;</button>
-        </div>
-        <div class="entry-field">
-          <label>密码</label>
-          <span class="entry-value" data-masked="true" data-real="${escapeAttr(e.password)}">${maskString(e.password)}</span>
-          <button class="btn-icon reveal-btn" title="显示/隐藏">&#128065;</button>
-        </div>
-      </div>
-    </div>
-  `).join('')
 
-  list.querySelectorAll('.copy-btn').forEach(btn => {
+  list.innerHTML = filtered.map((e, i) => {
+    const health = analyzePasswordHealth(e.password)
+    const healthColor = health.score >= 70 ? '#51cf94' : health.score >= 40 ? '#ffc078' : '#ff6b6b'
+    const actualIndex = entries.indexOf(e)
+
+    return `
+      <div class="entry-card" data-index="${actualIndex}">
+        <div class="entry-header">
+          <div class="entry-info">
+            <div class="entry-icon">${(e.site || '?').charAt(0).toUpperCase()}</div>
+            <div>
+              <div class="entry-title">${escapeHtml(e.site)}</div>
+              <div class="entry-username">${escapeHtml(e.username || '未设置用户名')}</div>
+              ${e.url ? `<a href="${escapeAttr(e.url)}" target="_blank" style="font-size: 12px; color: #d4c5a9;">${escapeHtml(e.url)}</a>` : ''}
+            </div>
+          </div>
+          <div class="entry-actions">
+            <button class="icon-btn copy" data-field="username" data-value="${escapeAttr(e.username)}" title="复制用户名">📋</button>
+            <button class="icon-btn copy" data-field="password" data-value="${escapeAttr(e.password)}" title="复制密码">🔑</button>
+            <button class="icon-btn edit" data-index="${actualIndex}" title="编辑">✏️</button>
+            <button class="icon-btn delete" data-index="${actualIndex}" title="删除">🗑️</button>
+          </div>
+        </div>
+        <div class="entry-fields">
+          <div class="entry-field">
+            <span class="entry-field-label">用户名</span>
+            <span class="entry-field-value entry-value" data-masked="true" data-real="${escapeAttr(e.username)}">${maskString(e.username || '')}</span>
+            <button class="reveal-btn">👁</button>
+          </div>
+          <div class="entry-field">
+            <span class="entry-field-label">密码</span>
+            <span class="entry-field-value entry-value" data-masked="true" data-real="${escapeAttr(e.password)}">${maskString(e.password)}</span>
+            <button class="reveal-btn">👁</button>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 12px; color: #5c6180;">密码强度:</span>
+              <div style="width: 80px; height: 6px; background: #2a2f3e; border-radius: 3px; overflow: hidden;">
+                <div style="height: 100%; width: ${health.score}%; background: ${healthColor};"></div>
+              </div>
+              <span style="font-size: 12px; color: ${healthColor};">${health.score >= 70 ? '强' : health.score >= 40 ? '中' : '弱'}</span>
+            </div>
+            ${e.group && e.group !== 'Default' ? `<span style="font-size: 12px; padding: 4px 8px; background: #232838; border-radius: 6px;">${e.group}</span>` : ''}
+          </div>
+        </div>
+      </div>
+    `
+  }).join('')
+
+  list.querySelectorAll('.copy').forEach(btn => {
     btn.addEventListener('click', () => copyToClipboard(btn.dataset.value, btn.dataset.field))
   })
-  list.querySelectorAll('.edit-btn').forEach(btn => {
+  list.querySelectorAll('.edit').forEach(btn => {
     btn.addEventListener('click', () => openModal(parseInt(btn.dataset.index)))
   })
-  list.querySelectorAll('.delete-btn').forEach(btn => {
+  list.querySelectorAll('.delete').forEach(btn => {
     btn.addEventListener('click', () => handleDelete(parseInt(btn.dataset.index)))
   })
   list.querySelectorAll('.reveal-btn').forEach(btn => {
@@ -145,92 +321,85 @@ function renderEntries(entries) {
 
 function openModal(editIndex = null) {
   const isEdit = editIndex !== null
-  const entry = isEdit ? currentEntries[editIndex] : { site: '', username: '', password: '' }
-  const modal = document.getElementById('modal')
-  const overlay = document.getElementById('modal-overlay')
+  const entry = isEdit ? currentEntries[editIndex] : {
+    site: '', username: '', password: '', url: '', notes: '', group: 'Default'
+  }
 
-  modal.innerHTML = `
-    <h2>${isEdit ? '编辑凭据' : '添加凭据'}</h2>
-    <form id="entry-form">
-      <div class="input-group">
-        <label for="entry-site">网站/应用名称</label>
-        <input type="text" id="entry-site" value="${escapeAttr(entry.site)}" placeholder="例如: GitHub" required />
-      </div>
-      <div class="input-group">
-        <label for="entry-user">用户名</label>
-        <div class="gen-row">
-          <input type="text" id="entry-user" value="${escapeAttr(entry.username)}" placeholder="用户名" required />
-          <button type="button" id="gen-username-btn" class="btn-secondary">生成</button>
-        </div>
-      </div>
-      <div class="input-group">
-        <label for="entry-pw">密码</label>
-        <div class="gen-row">
-          <div class="pw-wrapper">
-            <input type="password" id="entry-pw" value="${escapeAttr(entry.password)}" placeholder="密码" required autocomplete="off" />
-            <button type="button" class="toggle-pw" data-target="entry-pw">&#128065;</button>
-          </div>
-          <button type="button" id="gen-password-btn" class="btn-secondary">生成</button>
-        </div>
-      </div>
-      <div id="pw-options" class="pw-options hidden">
-        <div class="option-row">
-          <label>长度: <span id="pw-len-val">16</span></label>
-          <input type="range" id="pw-len" min="8" max="32" value="16" />
-        </div>
-        <div class="option-row">
-          <label><input type="checkbox" id="pw-lower" checked /> 小写字母</label>
-          <label><input type="checkbox" id="pw-upper" checked /> 大写字母</label>
-          <label><input type="checkbox" id="pw-digits" checked /> 数字</label>
-          <label><input type="checkbox" id="pw-symbols" checked /> 特殊字符</label>
-        </div>
-      </div>
-      <div class="modal-actions">
-        <button type="button" id="cancel-btn" class="btn-secondary">取消</button>
-        <button type="submit" class="btn-primary">${isEdit ? '保存' : '添加'}</button>
-      </div>
-    </form>
-  `
+  document.getElementById('modal-title').textContent = isEdit ? '编辑凭据' : '添加凭据'
+  document.getElementById('modal-submit').textContent = isEdit ? '保存' : '添加'
+  document.getElementById('entry-site').value = entry.site
+  document.getElementById('entry-user').value = entry.username
+  document.getElementById('entry-pw').value = entry.password
+  document.getElementById('entry-url').value = entry.url || ''
+  document.getElementById('entry-notes').value = entry.notes || ''
 
-  overlay.classList.remove('hidden')
+  updatePasswordHealth(entry.password)
 
-  document.getElementById('cancel-btn').addEventListener('click', closeModal)
-  document.getElementById('gen-username-btn').addEventListener('click', () => {
-    document.getElementById('entry-user').value = generateUsername()
-  })
-  document.getElementById('gen-password-btn').addEventListener('click', () => {
-    document.getElementById('pw-options').classList.toggle('hidden')
-  })
-  document.getElementById('pw-len').addEventListener('input', (e) => {
-    document.getElementById('pw-len-val').textContent = e.target.value
-    fillGeneratedPassword()
-  })
-  ;['pw-lower', 'pw-upper', 'pw-digits', 'pw-symbols'].forEach(id => {
-    document.getElementById(id).addEventListener('change', fillGeneratedPassword)
-  })
-  modal.querySelectorAll('.toggle-pw').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const input = document.getElementById(btn.dataset.target)
-      input.type = input.type === 'password' ? 'text' : 'password'
-    })
-  })
+  document.getElementById('modal-overlay').style.display = 'flex'
 
-  document.getElementById('entry-form').addEventListener('submit', (e) => {
+  const form = document.getElementById('entry-form')
+  form.onsubmit = (e) => {
     e.preventDefault()
     const site = document.getElementById('entry-site').value.trim()
     const username = document.getElementById('entry-user').value.trim()
     const password = document.getElementById('entry-pw').value
-    if (!site || !username || !password) return
+    const url = document.getElementById('entry-url').value.trim()
+    const notes = document.getElementById('entry-notes').value.trim()
+
+    if (!site || !password) return
+
+    const now = new Date().toISOString()
     if (isEdit) {
-      currentEntries[editIndex] = { site, username, password }
+      currentEntries[editIndex] = {
+        ...currentEntries[editIndex],
+        site, username, password, url, notes,
+        modified: now
+      }
     } else {
-      currentEntries.push({ site, username, password })
+      currentEntries.push({
+        site, username, password, url, notes,
+        group: 'Default',
+        created: now,
+        modified: now
+      })
     }
     saveAndRefresh()
     closeModal()
+  }
+
+  document.getElementById('cancel-btn').onclick = closeModal
+
+  document.getElementById('gen-username-btn').onclick = () => {
+    document.getElementById('entry-user').value = generateUsername()
+  }
+
+  document.getElementById('gen-password-btn').onclick = () => {
+    const options = document.getElementById('pw-options')
+    options.style.display = options.style.display === 'none' ? 'block' : 'none'
+  }
+
+  document.getElementById('toggle-pw-btn').onclick = () => {
+    const pwInput = document.getElementById('entry-pw')
+    const toggleBtn = document.getElementById('toggle-pw-btn')
+    if (pwInput.type === 'password') {
+      pwInput.type = 'text'
+      toggleBtn.textContent = '🙈'
+    } else {
+      pwInput.type = 'password'
+      toggleBtn.textContent = '👁'
+    }
+  }
+
+  document.getElementById('pw-len').oninput = (e) => {
+    document.getElementById('pw-len-val').textContent = e.target.value
+    updateGeneratedPassword()
+  }
+
+  ;['pw-lower', 'pw-upper', 'pw-digits', 'pw-symbols'].forEach(id => {
+    document.getElementById(id).onchange = updateGeneratedPassword
   })
 
-  function fillGeneratedPassword() {
+  function updateGeneratedPassword() {
     const len = parseInt(document.getElementById('pw-len').value)
     const opts = {
       lowercase: document.getElementById('pw-lower').checked,
@@ -239,12 +408,35 @@ function openModal(editIndex = null) {
       symbols: document.getElementById('pw-symbols').checked
     }
     document.getElementById('entry-pw').value = generatePassword(len, opts)
+    updatePasswordHealth(document.getElementById('entry-pw').value)
   }
+
+  document.getElementById('entry-pw').addEventListener('input', (e) => {
+    updatePasswordHealth(e.target.value)
+  })
+}
+
+function updatePasswordHealth(password) {
+  const health = analyzePasswordHealth(password)
+  const el = document.getElementById('password-health')
+  if (!password) {
+    el.innerHTML = ''
+    return
+  }
+  const color = health.score >= 70 ? '#51cf94' : health.score >= 40 ? '#ffc078' : '#ff6b6b'
+  el.innerHTML = `
+    <div style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: ${color}15; border-radius: 10px;">
+      <div style="flex: 1; height: 6px; background: #2a2f3e; border-radius: 3px; overflow: hidden;">
+        <div style="height: 100%; width: ${health.score}%; background: ${color};"></div>
+      </div>
+      <span style="font-size: 14px; font-weight: 500; color: ${color};">${health.score >= 70 ? '强' : health.score >= 40 ? '中' : '弱'}</span>
+    </div>
+    ${health.warnings.length > 0 ? `<p style="font-size: 12px; color: #ff6b6b; margin-top: 6px;">${health.warnings.join(', ')}</p>` : ''}
+  `
 }
 
 function closeModal() {
-  const overlay = document.getElementById('modal-overlay')
-  if (overlay) overlay.classList.add('hidden')
+  document.getElementById('modal-overlay').style.display = 'none'
 }
 
 async function handleUnlock(e) {
@@ -253,8 +445,8 @@ async function handleUnlock(e) {
   const isFirst = !hasVault()
 
   if (isFirst) {
-    const confirm = document.getElementById('master-pw-confirm').value
-    if (pw !== confirm) {
+    const confirmPw = document.getElementById('master-pw-confirm').value
+    if (pw !== confirmPw) {
       alert('两次输入的密码不一致')
       return
     }
@@ -295,21 +487,30 @@ async function handleDelete(index) {
 function handleSearch(e) {
   const query = e.target.value.toLowerCase()
   const filtered = currentEntries.filter(entry =>
-    entry.site.toLowerCase().includes(query) ||
-    entry.username.toLowerCase().includes(query)
+    (entry.site || '').toLowerCase().includes(query) ||
+    (entry.username || '').toLowerCase().includes(query) ||
+    (entry.url || '').toLowerCase().includes(query) ||
+    (entry.notes || '').toLowerCase().includes(query)
   )
   renderEntries(filtered)
 }
 
 async function saveAndRefresh() {
   await saveVault(currentEntries, masterPassword)
-  renderEntries(currentEntries)
+  render()
 }
 
 function copyToClipboard(text, field) {
+  if (clipboardTimer) clearTimeout(clipboardTimer)
+
   navigator.clipboard.writeText(text).then(() => {
     const names = { username: '用户名', password: '密码' }
-    showToast(`${names[field] || field}已复制`)
+    showToast(`${names[field] || field}已复制，30秒后自动清除`)
+
+    clipboardTimer = setTimeout(() => {
+      navigator.clipboard.writeText('').catch(() => {})
+      showToast('剪贴板已自动清除')
+    }, 30000)
   })
 }
 
@@ -318,7 +519,7 @@ function showToast(msg) {
   toast.className = 'toast'
   toast.textContent = msg
   document.body.appendChild(toast)
-  setTimeout(() => toast.remove(), 2000)
+  setTimeout(() => toast.remove(), 3000)
 }
 
 function escapeHtml(str) {
@@ -332,7 +533,9 @@ function escapeAttr(str) {
 }
 
 function maskString(str) {
-  return '*'.repeat(Math.max(str.length, 4))
+  if (!str) return '********'
+  return '*'.repeat(Math.max(str.length, 8))
 }
 
+applyTheme(localStorage.getItem('theme') || 'mytheme')
 render()
