@@ -1,5 +1,5 @@
 import { generatePassword, generateUsername, generatePassphrase } from './generator.js'
-import { saveVault, loadVault, hasVault, clearVault, exportToCSV, exportToJSON, importFromCSV, analyzePasswordHealth } from './store.js'
+import { saveVault, loadVault, hasVault, clearVault, exportToCSV, exportToCSVFull, exportToJSON, importFromCSV, analyzePasswordHealth } from './store.js'
 import './style.css'
 import './index.css'
 
@@ -569,8 +569,9 @@ function showExportMenu() {
   `
   menu.innerHTML = `
     <h3 style="margin: 0 0 16px 0; font-size: 16px;">导出数据</h3>
-    <button id="export-csv" class="btn btn-save" style="width: 100%; margin-bottom: 10px; display: block;">📄 导出为 CSV</button>
-    <button id="export-json" class="btn btn-save" style="width: 100%; margin-bottom: 10px; display: block;">📋 导出为 JSON</button>
+    <button id="export-csv-browser" class="btn btn-save" style="width: 100%; margin-bottom: 8px; display: block; font-size: 14px;">🌐 浏览器兼容格式 (CSV)</button>
+    <button id="export-csv-full" class="btn btn-save" style="width: 100%; margin-bottom: 8px; display: block; font-size: 14px;">📄 完整格式 (CSV)</button>
+    <button id="export-json" class="btn btn-save" style="width: 100%; margin-bottom: 8px; display: block; font-size: 14px;">📋 通用格式 (JSON)</button>
     <button id="export-cancel" class="btn btn-cancel" style="width: 100%; display: block;">取消</button>
   `
 
@@ -584,8 +585,13 @@ function showExportMenu() {
   document.body.appendChild(overlay)
   document.body.appendChild(menu)
 
-  document.getElementById('export-csv').onclick = () => {
-    exportData('csv')
+  document.getElementById('export-csv-browser').onclick = () => {
+    exportData('csv-browser')
+    overlay.remove()
+    menu.remove()
+  }
+  document.getElementById('export-csv-full').onclick = () => {
+    exportData('csv-full')
     overlay.remove()
     menu.remove()
   }
@@ -601,17 +607,32 @@ function showExportMenu() {
 }
 
 function exportData(format) {
-  const data = format === 'csv' ? exportToCSV(currentEntries) : exportToJSON(currentEntries)
-  const blob = new Blob([data], { type: format === 'csv' ? 'text/csv' : 'application/json' })
+  let data, filename, mime
+  if (format === 'csv-browser') {
+    data = exportToCSV(currentEntries)
+    filename = `passwords_browser_${new Date().toISOString().slice(0,10)}.csv`
+    mime = 'text/csv'
+  } else if (format === 'csv-full') {
+    data = exportToCSVFull(currentEntries)
+    filename = `passwords_full_${new Date().toISOString().slice(0,10)}.csv`
+    mime = 'text/csv'
+  } else {
+    data = exportToJSON(currentEntries)
+    filename = `passwords_${new Date().toISOString().slice(0,10)}.json`
+    mime = 'application/json'
+  }
+  const blob = new Blob([data], { type: mime })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `passwords_${new Date().toISOString().slice(0,10)}.${format}`
+  a.download = filename
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
-  showToast(`数据已导出为 ${format.toUpperCase()} 格式`)
+
+  const formatName = format === 'csv-browser' ? '浏览器兼容CSV' : format === 'csv-full' ? '完整CSV' : 'JSON'
+  showToast(`数据已导出为 ${formatName} 格式`)
 }
 
 function handleImportFile(e) {

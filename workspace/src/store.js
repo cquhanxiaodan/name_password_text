@@ -24,12 +24,24 @@ export function clearVault() {
 }
 
 export function exportToCSV(entries) {
-  const headers = ['Site', 'Username', 'Password', 'URL', 'Notes', 'Group', 'Created', 'Modified']
+  const headers = ['name', 'url', 'username', 'password', 'notes']
   const rows = entries.map(e => [
-    `"${(e.site || '').replace(/"/g, '""')}"`,
+    `"${(e.site || e.url || '').replace(/"/g, '""')}"`,
+    `"${(e.url || '').replace(/"/g, '""')}"`,
     `"${(e.username || '').replace(/"/g, '""')}"`,
     `"${(e.password || '').replace(/"/g, '""')}"`,
+    `"${(e.notes || '').replace(/"/g, '""')}"`
+  ].join(','))
+  return [headers.join(','), ...rows].join('\n')
+}
+
+export function exportToCSVFull(entries) {
+  const headers = ['name', 'url', 'username', 'password', 'notes', 'group', 'created', 'modified']
+  const rows = entries.map(e => [
+    `"${(e.site || e.url || '').replace(/"/g, '""')}"`,
     `"${(e.url || '').replace(/"/g, '""')}"`,
+    `"${(e.username || '').replace(/"/g, '""')}"`,
+    `"${(e.password || '').replace(/"/g, '""')}"`,
     `"${(e.notes || '').replace(/"/g, '""')}"`,
     `"${(e.group || 'Default').replace(/"/g, '""')}"`,
     `"${e.created || ''}"`,

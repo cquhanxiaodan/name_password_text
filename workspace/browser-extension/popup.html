@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      width: 380px;
+      min-height: 400px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(145deg, #fefdf8 0%, #faf8f5 100%);
+      color: #2d2a26;
+    }
+    .header {
+      padding: 20px;
+      border-bottom: 1px solid #e8e4df;
+      text-align: center;
+    }
+    .header h1 {
+      font-size: 18px;
+      margin-bottom: 4px;
+    }
+    .header p {
+      font-size: 12px;
+      color: #6b6560;
+    }
+    .sync-section {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e8e4df;
+    }
+    .sync-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .sync-input {
+      flex: 1;
+      padding: 10px 12px;
+      border: 1px solid #e8e4df;
+      border-radius: 8px;
+      font-size: 13px;
+      outline: none;
+    }
+    .sync-input:focus {
+      border-color: #d4c5a9;
+      box-shadow: 0 0 0 3px rgba(212, 197, 169, 0.15);
+    }
+    .btn {
+      padding: 10px 16px;
+      background: #d4c5a9;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn:hover {
+      background: #c9b89a;
+    }
+    .btn-secondary {
+      background: #f2efe9;
+      color: #6b6560;
+    }
+    .btn-secondary:hover {
+      background: #e8e4df;
+    }
+    .stats {
+      padding: 12px 20px;
+      background: #f8f6f3;
+      display: flex;
+      justify-content: space-around;
+      font-size: 12px;
+    }
+    .stat-item {
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 20px;
+      font-weight: 600;
+      color: #d4c5a9;
+    }
+    .stat-label {
+      color: #6b6560;
+      margin-top: 2px;
+    }
+    .search-section {
+      padding: 12px 20px;
+      border-bottom: 1px solid #e8e4df;
+    }
+    .search-input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #e8e4df;
+      border-radius: 8px;
+      font-size: 13px;
+      outline: none;
+    }
+    .search-input:focus {
+      border-color: #d4c5a9;
+    }
+    .list-section {
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .list-item {
+      padding: 14px 20px;
+      border-bottom: 1px solid #e8e4df;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .list-item:hover {
+      background: #f8f6f3;
+    }
+    .list-item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .site-name {
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .site-url {
+      font-size: 11px;
+      color: #9c9690;
+    }
+    .username {
+      font-size: 13px;
+      color: #6b6560;
+    }
+    .actions {
+      padding: 12px 20px;
+      border-top: 1px solid #e8e4df;
+      display: flex;
+      gap: 10px;
+    }
+    .actions .btn {
+      flex: 1;
+    }
+    .empty-state {
+      padding: 40px 20px;
+      text-align: center;
+      color: #9c9690;
+    }
+    .empty-state-icon {
+      font-size: 40px;
+      margin-bottom: 12px;
+    }
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #2d2a26;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      z-index: 1000;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .toast.show {
+      opacity: 1;
+    }
+    .footer {
+      padding: 10px 20px;
+      text-align: center;
+      font-size: 11px;
+      color: #9c9690;
+      border-top: 1px solid #e8e4df;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>密码管理器助手</h1>
+    <p>从浏览器导入已保存的密码</p>
+  </div>
+
+  <div class="sync-section">
+    <div class="sync-row">
+      <input type="text" class="sync-input" id="serverUrl" placeholder="输入密码管理器地址，如 http://localhost:5173">
+      <button class="btn" id="syncBtn">同步</button>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat-item">
+      <div class="stat-value" id="browserCount">0</div>
+      <div class="stat-label">浏览器密码</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value" id="syncCount">0</div>
+      <div class="stat-label">已同步</div>
+    </div>
+  </div>
+
+  <div class="search-section">
+    <input type="text" class="search-input" id="searchInput" placeholder="搜索密码...">
+  </div>
+
+  <div class="list-section" id="credentialList">
+    <div class="empty-state">
+      <div class="empty-state-icon">🔐</div>
+      <p>点击「导入浏览器密码」开始</p>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-secondary" id="importBtn">📥 导入浏览器密码</button>
+    <button class="btn btn-secondary" id="exportBtn">📤 导出到管理器</button>
+  </div>
+
+  <div class="footer">
+    仅本地使用，不会上传到任何服务器
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
