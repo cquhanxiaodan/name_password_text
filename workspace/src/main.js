@@ -98,12 +98,22 @@ function renderMainScreen() {
         </nav>
 
         <div style="padding: 16px; border-top: 1px solid #2a2f3e;">
+          <button id="export-btn" class="nav-item" style="width: 100%; margin-bottom: 8px;">
+            <span class="nav-item-icon">📤</span>
+            <span class="nav-item-text">导出数据</span>
+          </button>
+          <button id="import-btn" class="nav-item" style="width: 100%; margin-bottom: 8px;">
+            <span class="nav-item-icon">📥</span>
+            <span class="nav-item-text">导入数据</span>
+          </button>
           <button id="lock-btn" class="nav-item" style="width: 100%;">
             <span class="nav-item-icon">🔒</span>
             <span class="nav-item-text">锁定保险库</span>
           </button>
         </div>
       </aside>
+
+      <input type="file" id="import-file" accept=".csv,.json" style="display: none;">
 
       <main class="main-content">
         <header class="main-header">
@@ -194,6 +204,10 @@ function renderMainScreen() {
   document.getElementById('add-btn').addEventListener('click', () => openModal())
   document.getElementById('search-input').addEventListener('input', handleSearch)
   document.getElementById('lock-btn').addEventListener('click', handleLock)
+
+  document.getElementById('export-btn').addEventListener('click', () => showExportMenu())
+  document.getElementById('import-btn').addEventListener('click', () => document.getElementById('import-file').click())
+  document.getElementById('import-file').addEventListener('change', handleImportFile)
 
   document.getElementById('theme-btn').addEventListener('click', (e) => {
     e.stopPropagation()
@@ -535,6 +549,113 @@ function escapeAttr(str) {
 function maskString(str) {
   if (!str) return '********'
   return '*'.repeat(Math.max(str.length, 8))
+}
+
+function showExportMenu() {
+  const menu = document.createElement('div')
+  menu.className = 'export-menu'
+  menu.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #ffffff;
+    border: 1px solid #e8e4df;
+    border-radius: 16px;
+    padding: 24px;
+    z-index: 2000;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    min-width: 280px;
+  `
+  menu.innerHTML = `
+    <h3 style="margin: 0 0 16px 0; font-size: 16px;">导出数据</h3>
+    <button id="export-csv" class="btn btn-save" style="width: 100%; margin-bottom: 10px; display: block;">📄 导出为 CSV</button>
+    <button id="export-json" class="btn btn-save" style="width: 100%; margin-bottom: 10px; display: block;">📋 导出为 JSON</button>
+    <button id="export-cancel" class="btn btn-cancel" style="width: 100%; display: block;">取消</button>
+  `
+
+  const overlay = document.createElement('div')
+  overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1999;'
+  overlay.onclick = () => {
+    overlay.remove()
+    menu.remove()
+  }
+
+  document.body.appendChild(overlay)
+  document.body.appendChild(menu)
+
+  document.getElementById('export-csv').onclick = () => {
+    exportData('csv')
+    overlay.remove()
+    menu.remove()
+  }
+  document.getElementById('export-json').onclick = () => {
+    exportData('json')
+    overlay.remove()
+    menu.remove()
+  }
+  document.getElementById('export-cancel').onclick = () => {
+    overlay.remove()
+    menu.remove()
+  }
+}
+
+function exportData(format) {
+  const data = format === 'csv' ? exportToCSV(currentEntries) : exportToJSON(currentEntries)
+  const blob = new Blob([data], { type: format === 'csv' ? 'text/csv' : 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `passwords_${new Date().toISOString().slice(0,10)}.${format}`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  showToast(`数据已导出为 ${format.toUpperCase()} 格式`)
+}
+
+function handleImportFile(e) {
+  const file = e.target.files[0]
+  if (!file) return
+
+  const reader = new FileReader()
+  reader.onload = (event) => {
+    const content = event.target.result
+    let imported = []
+
+    try {
+      if (file.name.endsWith('.csv')) {
+        imported = importFromCSV(content)
+      } else if (file.name.endsWith('.json')) {
+        const parsed = JSON.parse(content)
+        imported = Array.isArray(parsed) ? parsed : parsed.entries || []
+      }
+
+      if (imported.length === 0) {
+        showToast('未找到可导入的数据')
+        return
+      }
+
+      const merged = [...currentEntries, ...imported.map(e => ({
+        ...e,
+        id: Date.now() + Math.random(),
+        created: e.created || new Date().toISOString(),
+        modified: new Date().toISOString()
+      }))]
+
+      currentEntries = merged
+      saveVault(currentEntries, masterPassword).then(() => {
+        renderEntries(currentEntries)
+        showToast(`成功导入 ${imported.length} 条数据`)
+      })
+    } catch (err) {
+      showToast('导入失败：文件格式错误')
+      console.error(err)
+    }
+
+    e.target.value = ''
+  }
+  reader.readAsText(file)
 }
 
 applyTheme(localStorage.getItem('theme') || 'mytheme')

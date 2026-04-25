@@ -45,25 +45,58 @@ export function exportToJSON(entries) {
 export function importFromCSV(csv) {
   const lines = csv.split('\n').filter(l => l.trim())
   if (lines.length < 2) return []
-  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''))
+  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase())
   const entries = []
+
+  const keyMap = {
+    'url': 'url',
+    'website': 'url',
+    'site': 'site',
+    'name': 'site',
+    'title': 'site',
+    'username': 'username',
+    'user': 'username',
+    'login': 'username',
+    'email': 'username',
+    'password': 'password',
+    'pass': 'password',
+    'secret': 'password',
+    'notes': 'notes',
+    'note': 'notes',
+    'comment': 'notes',
+    'group': 'group',
+    'folder': 'group',
+    'category': 'group',
+    'created': 'created',
+    'modified': 'modified',
+    'timestamp': 'modified'
+  }
+
   for (let i = 1; i < lines.length; i++) {
     const values = lines[i].match(/(".*?"|[^,]+)/g) || []
     const values_clean = values.map(v => v.trim().replace(/^"|"$/g, '').replace(/""/g, '"'))
     const entry = {}
     headers.forEach((h, idx) => {
-      const key = h.toLowerCase()
-      if (key === 'site') entry.site = values_clean[idx] || ''
-      else if (key === 'username') entry.username = values_clean[idx] || ''
-      else if (key === 'password') entry.password = values_clean[idx] || ''
-      else if (key === 'url') entry.url = values_clean[idx] || ''
-      else if (key === 'notes') entry.notes = values_clean[idx] || ''
-      else if (key === 'group') entry.group = values_clean[idx] || 'Default'
+      const mappedKey = keyMap[h]
+      if (mappedKey && !entry[mappedKey]) {
+        entry[mappedKey] = values_clean[idx] || ''
+      }
     })
-    if (entry.site && entry.password) {
-      entry.created = entry.created || new Date().toISOString()
-      entry.modified = new Date().toISOString()
-      entries.push(entry)
+
+    const site = entry.site || entry.url || ''
+    const password = entry.password || ''
+
+    if (site && password) {
+      entries.push({
+        site: site,
+        username: entry.username || '',
+        password: password,
+        url: entry.url || '',
+        notes: entry.notes || '',
+        group: entry.group || 'Default',
+        created: new Date().toISOString(),
+        modified: new Date().toISOString()
+      })
     }
   }
   return entries
