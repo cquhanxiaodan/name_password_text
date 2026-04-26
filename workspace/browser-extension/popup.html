@@ -189,6 +189,18 @@
       <input type="text" class="sync-input" id="serverUrl" placeholder="输入密码管理器地址，如 http://localhost:5173">
       <button class="btn" id="syncBtn">同步</button>
     </div>
+    <div class="sync-section" style="border-top: 1px solid #e8e4df; border-bottom: none;">
+      <p style="font-size: 12px; color: #6b6560; margin-bottom: 10px;">
+        由于浏览器安全限制，需要先从浏览器导出密码，再导入到插件。
+      </p>
+      <div class="sync-row">
+        <input type="file" id="importCsvFile" accept=".csv" style="flex: 1; font-size: 12px;">
+        <button class="btn btn-secondary" id="importCsvBtn">导入CSV</button>
+      </div>
+      <p style="font-size: 11px; color: #9c9690; margin-top: 8px;">
+        Chrome: 设置 → 密码 → 导出密码 → 下载 CSV
+      </p>
+    </div>
   </div>
 
   <div class="stats">

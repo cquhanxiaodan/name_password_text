@@ -9,6 +9,8 @@ const serverUrlEl = document.getElementById('serverUrl')
 const syncBtnEl = document.getElementById('syncBtn')
 const importBtnEl = document.getElementById('importBtn')
 const exportBtnEl = document.getElementById('exportBtn')
+const importCsvBtnEl = document.getElementById('importCsvBtn')
+const importCsvFileEl = document.getElementById('importCsvFile')
 const toastEl = document.getElementById('toast')
 
 function showToast(msg) {
@@ -178,6 +180,70 @@ function convertToCSV(entries) {
   ].join(','))
   return [headers.join(','), ...rows].join('\n')
 }
+
+function parseCSV(csv) {
+  const lines = csv.split('\n').filter(l => l.trim())
+  if (lines.length < 2) return []
+
+  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase())
+  const entries = []
+
+  const keyMap = {
+    'url': 'url', 'website': 'url', 'site': 'site', 'name': 'site', 'title': 'site',
+    'username': 'username', 'user': 'username', 'login': 'username', 'email': 'username',
+    'password': 'password', 'pass': 'password', 'secret': 'password'
+  }
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].match(/(".*?"|[^,]+)/g) || []
+    const values_clean = values.map(v => v.trim().replace(/^"|"$/g, '').replace(/""/g, '"'))
+    const entry = {}
+
+    headers.forEach((h, idx) => {
+      const mappedKey = keyMap[h]
+      if (mappedKey && !entry[mappedKey]) {
+        entry[mappedKey] = values_clean[idx] || ''
+      }
+    })
+
+    const site = entry.site || entry.url || ''
+    const password = entry.password || ''
+
+    if (site && password) {
+      entries.push({
+        site: site,
+        username: entry.username || '',
+        password: password,
+        url: entry.url || ''
+      })
+    }
+  }
+  return entries
+}
+
+importCsvBtnEl.addEventListener('click', () => {
+  const file = importCsvFileEl.files[0]
+  if (!file) {
+    showToast('请先选择 CSV 文件')
+    return
+  }
+
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    const parsed = parseCSV(e.target.result)
+    if (parsed.length === 0) {
+      showToast('CSV 文件中未找到可导入的密码')
+      return
+    }
+    credentials = parsed
+    chrome.storage.local.set({ savedPasswords: credentials }, () => {
+      updateStats()
+      renderList(credentials)
+      showToast(`成功导入 ${credentials.length} 条密码`)
+    })
+  }
+  reader.readAsText(file)
+})
 
 document.addEventListener('DOMContentLoaded', () => {
   chrome.storage.local.get(['savedPasswords', 'serverUrl'], (result) => {
