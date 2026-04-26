@@ -186,10 +186,18 @@
 
   <div class="sync-section">
     <div class="sync-row">
-      <input type="text" class="sync-input" id="serverUrl" placeholder="输入密码管理器地址，如 http://localhost:5173">
-      <button class="btn" id="syncBtn">同步</button>
+      <input type="text" class="sync-input" id="serverUrl" placeholder="同步服务器地址，如 http://localhost:3001" style="flex: 1;">
     </div>
-    <div class="sync-section" style="border-top: 1px solid #e8e4df; border-bottom: none;">
+    <div class="sync-row" style="margin-top: 8px;">
+      <input type="text" class="sync-input" id="tokenInput" placeholder="输入令牌（或点击注册获取）" style="flex: 1;">
+      <button class="btn" id="registerBtn">注册</button>
+      <button class="btn" id="loginBtn">登录</button>
+    </div>
+    <div class="sync-row" style="margin-top: 8px;">
+      <button class="btn btn-secondary" id="syncBtn" style="flex: 1;">🔄 同步到服务器</button>
+      <button class="btn btn-secondary" id="fetchBtn" style="flex: 1;">📥 从服务器拉取</button>
+    </div>
+    <div class="sync-section" style="border-top: 1px solid #e8e4df; border-bottom: none; margin-top: 12px;">
       <p style="font-size: 12px; color: #6b6560; margin-bottom: 10px;">
         由于浏览器安全限制，需要先从浏览器导出密码，再导入到插件。
       </p>

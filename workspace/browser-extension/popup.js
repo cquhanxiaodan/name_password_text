@@ -1,12 +1,18 @@
 let credentials = []
 let syncedCredentials = []
+let currentToken = ''
+let serverUrl = ''
 
 const browserCountEl = document.getElementById('browserCount')
 const syncCountEl = document.getElementById('syncCount')
 const credentialListEl = document.getElementById('credentialList')
 const searchInputEl = document.getElementById('searchInput')
 const serverUrlEl = document.getElementById('serverUrl')
+const tokenInputEl = document.getElementById('tokenInput')
 const syncBtnEl = document.getElementById('syncBtn')
+const fetchBtnEl = document.getElementById('fetchBtn')
+const registerBtnEl = document.getElementById('registerBtn')
+const loginBtnEl = document.getElementById('loginBtn')
 const importBtnEl = document.getElementById('importBtn')
 const exportBtnEl = document.getElementById('exportBtn')
 const importCsvBtnEl = document.getElementById('importCsvBtn')
@@ -16,7 +22,7 @@ const toastEl = document.getElementById('toast')
 function showToast(msg) {
   toastEl.textContent = msg
   toastEl.classList.add('show')
-  setTimeout(() => toastEl.classList.remove('show'), 2500)
+  setTimeout(() => toastEl.classList.remove('show'), 3000)
 }
 
 function updateStats() {
@@ -61,20 +67,146 @@ function escapeHtml(str) {
 
 async function fillCredential(url, username, password) {
   try {
-    await chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-      if (tabs[0]) {
-        await chrome.tabs.sendMessage(tabs[0].id, {
-          action: 'fillCredential',
-          username: username,
-          password: password,
-          url: url
-        })
-        showToast('已填充到页面')
-        window.close()
-      }
-    })
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (tabs[0]) {
+      await chrome.tabs.sendMessage(tabs[0].id, {
+        action: 'fillCredential',
+        username: username,
+        password: password,
+        url: url
+      })
+      showToast('已填充到页面')
+      window.close()
+    }
   } catch (err) {
     showToast('无法填充：请确保在网页上点击')
+  }
+}
+
+async function apiRequest(endpoint, method = 'GET', body = null, isFile = false) {
+  if (!serverUrl) {
+    showToast('请先输入服务器地址')
+    return null
+  }
+
+  const headers = {
+    'Authorization': `Bearer ${currentToken}`
+  }
+
+  const options = { method, headers }
+
+  if (body) {
+    if (isFile) {
+      options.body = body
+      headers['Content-Type'] = 'multipart/form-data'
+    } else {
+      options.body = JSON.stringify(body)
+      headers['Content-Type'] = 'application/json'
+    }
+  }
+
+  try {
+    const response = await fetch(`${serverUrl}${endpoint}`, options)
+    const data = await response.json()
+    if (!response.ok) {
+      throw new Error(data.error || '请求失败')
+    }
+    return data
+  } catch (err) {
+    showToast('请求失败：' + err.message)
+    return null
+  }
+}
+
+registerBtnEl.addEventListener('click', async () => {
+  serverUrl = serverUrlEl.value.trim()
+  if (!serverUrl) {
+    showToast('请先输入服务器地址')
+    return
+  }
+
+  showToast('正在注册...')
+  const result = await apiRequest('/api/register', 'POST')
+
+  if (result && result.token) {
+    currentToken = result.token
+    tokenInputEl.value = result.token
+    chrome.storage.local.set({ token: result.token, serverUrl })
+    showToast('注册成功！令牌已保存')
+  }
+})
+
+loginBtnEl.addEventListener('click', async () => {
+  serverUrl = serverUrlEl.value.trim()
+  currentToken = tokenInputEl.value.trim()
+
+  if (!serverUrl || !currentToken) {
+    showToast('请输入服务器地址和令牌')
+    return
+  }
+
+  showToast('正在登录...')
+  const result = await apiRequest('/api/login', 'POST', { token: currentToken })
+
+  if (result && result.success) {
+    chrome.storage.local.set({ token: currentToken, serverUrl })
+    showToast(`登录成功！服务器上有 ${result.passwordCount} 条密码`)
+    await loadFromServer()
+  }
+})
+
+syncBtnEl.addEventListener('click', async () => {
+  if (!currentToken) {
+    showToast('请先登录')
+    return
+  }
+
+  if (credentials.length === 0) {
+    showToast('没有可同步的密码，请先导入')
+    return
+  }
+
+  showToast('正在同步...')
+
+  const csvContent = convertToCSV(credentials)
+  const formData = new FormData()
+  formData.append('file', new Blob([csvContent], { type: 'text/csv' }), 'passwords.csv')
+
+  const result = await fetch(`${serverUrl}/api/import`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${currentToken}` },
+    body: formData
+  }).then(r => r.json()).catch(() => null)
+
+  if (result && result.success) {
+    syncedCredentials = [...credentials]
+    updateStats()
+    showToast(`同步成功！共 ${result.imported} 条密码`)
+  } else {
+    showToast('同步失败')
+  }
+})
+
+fetchBtnEl.addEventListener('click', async () => {
+  await loadFromServer()
+})
+
+async function loadFromServer() {
+  if (!currentToken) {
+    showToast('请先登录')
+    return
+  }
+
+  showToast('正在从服务器拉取...')
+  const result = await apiRequest('/api/passwords')
+
+  if (result && result.passwords) {
+    credentials = result.passwords
+    syncedCredentials = [...credentials]
+    chrome.storage.local.set({ savedPasswords: credentials })
+    updateStats()
+    renderList(credentials)
+    showToast(`拉取成功！共 ${result.passwords.length} 条密码`)
   }
 }
 
@@ -91,7 +223,6 @@ importBtnEl.addEventListener('click', async () => {
     renderList(credentials)
     showToast(`已加载 ${credentials.length} 条密码`)
   } catch (err) {
-    console.error(err)
     showToast('读取失败：' + err.message)
   }
 })
@@ -110,47 +241,7 @@ searchInputEl.addEventListener('input', (e) => {
   }
 })
 
-syncBtnEl.addEventListener('click', async () => {
-  const serverUrl = serverUrlEl.value.trim()
-  if (!serverUrl) {
-    showToast('请输入服务器地址')
-    return
-  }
-
-  if (credentials.length === 0) {
-    showToast('没有可同步的密码，请先导入')
-    return
-  }
-
-  try {
-    const csvContent = convertToCSV(credentials)
-    const formData = new FormData()
-    formData.append('file', new Blob([csvContent], { type: 'text/csv' }), 'import.csv')
-
-    const response = await fetch(`${serverUrl}/api/import`, {
-      method: 'POST',
-      body: formData
-    })
-
-    if (response.ok) {
-      syncedCredentials = [...credentials]
-      updateStats()
-      showToast(`成功同步 ${credentials.length} 条密码`)
-    } else {
-      showToast('同步失败：服务器返回错误')
-    }
-  } catch (err) {
-    showToast('同步失败：' + err.message)
-  }
-})
-
-exportBtnEl.addEventListener('click', async () => {
-  const serverUrl = serverUrlEl.value.trim()
-  if (!serverUrl) {
-    showToast('请输入服务器地址')
-    return
-  }
-
+exportBtnEl.addEventListener('click', () => {
   if (credentials.length === 0) {
     showToast('没有可导出的密码')
     return
@@ -166,7 +257,7 @@ exportBtnEl.addEventListener('click', async () => {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
-  showToast('已导出 CSV 文件，可导入到密码管理器')
+  showToast('已导出 CSV 文件')
 })
 
 function convertToCSV(entries) {
@@ -176,7 +267,7 @@ function convertToCSV(entries) {
     `"${(e.url || '').replace(/"/g, '""')}"`,
     `"${(e.username || '').replace(/"/g, '""')}"`,
     `"${(e.password || '').replace(/"/g, '""')}"`,
-    `""`
+    `"${(e.notes || '').replace(/"/g, '""')}"`
   ].join(','))
   return [headers.join(','), ...rows].join('\n')
 }
@@ -206,14 +297,11 @@ function parseCSV(csv) {
       }
     })
 
-    const site = entry.site || entry.url || ''
-    const password = entry.password || ''
-
-    if (site && password) {
+    if ((entry.site || entry.url) && entry.password) {
       entries.push({
-        site: site,
+        site: entry.site || entry.url || '',
         username: entry.username || '',
-        password: password,
+        password: entry.password || '',
         url: entry.url || ''
       })
     }
@@ -235,29 +323,40 @@ importCsvBtnEl.addEventListener('click', () => {
       showToast('CSV 文件中未找到可导入的密码')
       return
     }
-    credentials = parsed
+    credentials = [...credentials, ...parsed]
     chrome.storage.local.set({ savedPasswords: credentials }, () => {
       updateStats()
       renderList(credentials)
-      showToast(`成功导入 ${credentials.length} 条密码`)
+      showToast(`成功导入 ${parsed.length} 条密码`)
     })
   }
   reader.readAsText(file)
 })
 
 document.addEventListener('DOMContentLoaded', () => {
-  chrome.storage.local.get(['savedPasswords', 'serverUrl'], (result) => {
+  chrome.storage.local.get(['savedPasswords', 'token', 'serverUrl'], (result) => {
     if (result.savedPasswords) {
       credentials = result.savedPasswords
       updateStats()
       renderList(credentials)
     }
+    if (result.token) {
+      currentToken = result.token
+      tokenInputEl.value = result.token
+    }
     if (result.serverUrl) {
       serverUrlEl.value = result.serverUrl
+      serverUrl = result.serverUrl
     }
   })
 
   serverUrlEl.addEventListener('change', () => {
-    chrome.storage.local.set({ serverUrl: serverUrlEl.value })
+    serverUrl = serverUrlEl.value.trim()
+    chrome.storage.local.set({ serverUrl })
+  })
+
+  tokenInputEl.addEventListener('change', () => {
+    currentToken = tokenInputEl.value.trim()
+    chrome.storage.local.set({ token: currentToken })
   })
 })
