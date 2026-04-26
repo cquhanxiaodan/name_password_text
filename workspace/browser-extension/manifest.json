@@ -4,8 +4,7 @@
   "version": "1.0.0",
   "description": "与密码管理器 Web 应用联动，支持导入浏览器已保存的密码并自动填充表单",
   "permissions": [
-    "storage",
-    "scriptable"
+    "storage"
   ],
   "host_permissions": [
     "http://*/*",
@@ -14,15 +13,15 @@
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
+      "16": "icons/icon16.svg",
+      "48": "icons/icon16.svg",
+      "128": "icons/icon16.svg"
     }
   },
   "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
+    "16": "icons/icon16.svg",
+    "48": "icons/icon16.svg",
+    "128": "icons/icon16.svg"
   },
   "background": {
     "service_worker": "background.js"
