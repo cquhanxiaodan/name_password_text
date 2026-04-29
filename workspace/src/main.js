@@ -1,5 +1,5 @@
 import { generatePassword, generateUsername, generatePassphrase } from './generator.js'
-import { saveVault, loadVault, hasVault, clearVault, exportToCSV, exportToCSVFull, exportToJSON, importFromCSV, analyzePasswordHealth } from './store.js'
+import { saveVault, loadVault, hasVault, clearVault, exportToCSV, exportToCSVFull, exportToJSON, importFromCSV, analyzePasswordHealth, getServerConfig, setServerConfig, serverRegister, serverLogin, serverPush, serverPull, importFromServerPasswords } from './store.js'
 import './style.css'
 import './index.css'
 
@@ -106,6 +106,10 @@ function renderMainScreen() {
             <span class="nav-item-icon">📥</span>
             <span class="nav-item-text">导入数据</span>
           </button>
+          <button id="server-btn" class="nav-item" style="width: 100%; margin-bottom: 8px;">
+            <span class="nav-item-icon">☁️</span>
+            <span class="nav-item-text">云端同步</span>
+          </button>
           <button id="lock-btn" class="nav-item" style="width: 100%;">
             <span class="nav-item-icon">🔒</span>
             <span class="nav-item-text">锁定保险库</span>
@@ -208,6 +212,7 @@ function renderMainScreen() {
   document.getElementById('export-btn').addEventListener('click', () => showExportMenu())
   document.getElementById('import-btn').addEventListener('click', () => document.getElementById('import-file').click())
   document.getElementById('import-file').addEventListener('change', handleImportFile)
+  document.getElementById('server-btn').addEventListener('click', () => showServerModal())
 
   document.getElementById('theme-btn').addEventListener('click', (e) => {
     e.stopPropagation()
@@ -603,6 +608,133 @@ function showExportMenu() {
   document.getElementById('export-cancel').onclick = () => {
     overlay.remove()
     menu.remove()
+  }
+}
+
+function showServerModal() {
+  const config = getServerConfig()
+  const isConfigured = config.url && config.token
+
+  const menu = document.createElement('div')
+  menu.className = 'server-modal'
+  menu.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #ffffff;
+    border: 1px solid #e8e4df;
+    border-radius: 16px;
+    padding: 24px;
+    z-index: 2000;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    min-width: 320px;
+    max-width: 90vw;
+  `
+  menu.innerHTML = `
+    <h3 style="margin: 0 0 16px 0; font-size: 16px;">☁️ 云端同步</h3>
+    ${!isConfigured ? `
+      <div style="margin-bottom: 16px;">
+        <label class="form-label" style="font-size: 13px;">服务器地址</label>
+        <input type="url" id="server-url-input" class="form-input" placeholder="http://localhost:3001" value="${config.url || ''}" style="font-size: 14px;" />
+      </div>
+      <div style="margin-bottom: 16px;">
+        <label class="form-label" style="font-size: 13px;">访问令牌</label>
+        <input type="text" id="server-token-input" class="form-input" placeholder="输入访问令牌" value="" style="font-size: 14px;" />
+      </div>
+      <button id="server-connect-btn" class="btn btn-save" style="width: 100%; margin-bottom: 8px; display: block; font-size: 14px;">连接服务器</button>
+    ` : `
+      <div style="margin-bottom: 16px; padding: 12px; background: #f0f9f0; border-radius: 8px; font-size: 13px;">
+        <div style="color: #51cf94; margin-bottom: 4px;">✓ 已连接到服务器</div>
+        <div style="color: #666;">服务器: ${escapeHtml(config.url)}</div>
+      </div>
+      <button id="server-sync-btn" class="btn btn-save" style="width: 100%; margin-bottom: 8px; display: block; font-size: 14px;">📤 同步到云端 (Push)</button>
+      <button id="server-pull-btn" class="btn btn-save" style="width: 100%; margin-bottom: 8px; display: block; font-size: 14px;">📥 从云端拉取 (Pull)</button>
+      <button id="server-disconnect-btn" class="btn btn-cancel" style="width: 100%; display: block; font-size: 14px;">断开连接</button>
+    `}
+    <button id="server-cancel-btn" class="btn btn-cancel" style="width: 100%; margin-top: 8px; display: block; font-size: 14px;">关闭</button>
+  `
+
+  const overlay = document.createElement('div')
+  overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1999;'
+  overlay.onclick = () => {
+    overlay.remove()
+    menu.remove()
+  }
+
+  document.body.appendChild(overlay)
+  document.body.appendChild(menu)
+
+  document.getElementById('server-cancel-btn').onclick = () => {
+    overlay.remove()
+    menu.remove()
+  }
+
+  if (!isConfigured) {
+    document.getElementById('server-connect-btn').onclick = async () => {
+      const url = document.getElementById('server-url-input').value.trim()
+      const token = document.getElementById('server-token-input').value.trim()
+
+      if (!url) {
+        showToast('请输入服务器地址')
+        return
+      }
+      if (!token) {
+        showToast('请输入访问令牌')
+        return
+      }
+
+      const result = await serverLogin(url, token)
+      if (result.success) {
+        showToast(`连接成功！服务器上有 ${result.passwordCount} 个密码`)
+        overlay.remove()
+        menu.remove()
+        render()
+      } else {
+        showToast(result.error || '连接失败')
+      }
+    }
+  } else {
+    document.getElementById('server-sync-btn').onclick = async () => {
+      const result = await serverPush(currentEntries)
+      if (result.success) {
+        showToast(`同步成功！已上传 ${result.imported} 个密码`)
+      } else {
+        showToast(result.error || '同步失败')
+      }
+    }
+
+    document.getElementById('server-pull-btn').onclick = async () => {
+      const result = await serverPull()
+      if (result.success) {
+        const imported = importFromServerPasswords(result.passwords)
+        if (imported.length === 0) {
+          showToast('服务器上没有密码')
+          return
+        }
+        const merged = [...currentEntries, ...imported.map(e => ({
+          ...e,
+          id: Date.now() + Math.random(),
+          created: e.created || new Date().toISOString(),
+          modified: new Date().toISOString()
+        }))]
+        currentEntries = merged
+        await saveAndRefresh()
+        showToast(`成功拉取 ${imported.length} 个密码`)
+      } else {
+        showToast(result.error || '拉取失败')
+      }
+    }
+
+    document.getElementById('server-disconnect-btn').onclick = () => {
+      if (confirm('确定断开与服务器的连接？')) {
+        setServerConfig('', '')
+        showToast('已断开连接')
+        overlay.remove()
+        menu.remove()
+        render()
+      }
+    }
   }
 }
 

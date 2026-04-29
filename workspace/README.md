@@ -189,6 +189,41 @@ npx serve .
 2. 插件支持导出 CSV
 3. 导入到 Web 应用
 
+### 方案四：自建云端同步服务器
+
+可以部署自己的同步服务器，实现多设备密码同步。
+
+#### 启动服务器
+
+```bash
+cd workspace
+npm run server
+```
+
+服务器默认运行在 `http://localhost:3001`
+
+#### API 接口
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/register` | POST | 注册新账号，获取访问令牌 |
+| `/api/login` | POST | 验证令牌 |
+| `/api/passwords` | GET | 获取密码列表 |
+| `/api/import` | POST | 导入密码 (CSV) |
+| `/api/passwords` | DELETE | 清空密码 |
+
+#### 使用同步功能
+
+1. 在 Web 应用中点击侧边栏「☁️ 云端同步」
+2. 输入服务器地址和访问令牌
+3. 连接成功后可进行：
+   - **Push**：将本地密码同步到云端
+   - **Pull**：从云端拉取密码到本地
+
+#### 数据存储
+
+服务器数据存储在 `data/passwords.json` 文件中。
+
 ---
 
 ## 文件结构
@@ -197,7 +232,7 @@ npx serve .
 workspace/
 ├── src/
 │   ├── main.js       # 主应用逻辑
-│   ├── store.js      # 数据存储、加密、导入导出
+│   ├── store.js      # 数据存储、加密、导入导出、云端同步
 │   ├── generator.js  # 密码生成器
 │   ├── crypto.js     # 加密解密
 │   ├── style.css     # 主样式（含主题变量）
@@ -208,6 +243,7 @@ workspace/
 │   ├── popup.js
 │   ├── background.js
 │   └── content.js
+├── server.js         # 云端同步服务器
 ├── dist/             # 构建产物
 └── package.json
 ```
